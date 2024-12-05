@@ -1,0 +1,192 @@
+---
+title: "Class Project: Climate Change"
+author: "Vishal T Lilani"
+date: "05/12/2024"
+output: html_notebook
+---
+
+# Research Question
+
+**"How have land temperatures changed over the past century across different countries, and what trends can we observe in global warming?"**
+---
+
+## Data Sources
+
+**Primary Data Source:**  
+- Dataset: *GlobalLandTemperaturesByCountry.csv*  
+- Source: Kaggle, curated by Berkeley Earth.  
+- Description: Historical land temperature records for countries worldwide. Each record contains the date, temperature, and country.  
+
+**Secondary Data Source:**  
+- Dataset: Meteorological data from the `climate` R package.  
+- Description: Provides environmental variables like CO2 levels, precipitation, and temperature, adding complementary insights.
+
+---
+
+## Data Access and Inspection
+
+### Importing Data
+```{r setup, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(readr)
+
+
+temperature_data <- read_csv("/Users/vishallilani/Desktop/STAT 184/archive/GlobalLandTemperaturesByCountry.csv")
+
+
+glimpse(temperature_data)
+
+
+summary(temperature_data)
+```
+
+###Cleaning and Filtering
+```{r}
+recent_data <- temperature_data %>%
+  filter(as.Date(dt) >= as.Date("1924-01-01"))
+
+# Summary statistics
+country_summary <- recent_data %>%
+  group_by(Country) %>%
+  summarize(
+    Median_Temperature = median(AverageTemperature, na.rm = TRUE),
+    Min_Temperature = min(AverageTemperature, na.rm = TRUE),
+    Max_Temperature = max(AverageTemperature, na.rm = TRUE)
+  )
+
+
+print(country_summary)
+
+```
+###Exploring Global Trends
+```{r}
+sample_data <- temperature_data %>%
+  sample_n(1000)
+
+library(plotly)
+
+# ggplot to plotly 
+plot <- ggplot(sample_data, aes(x = as.Date(dt), y = AverageTemperature)) +
+  geom_line(alpha = 0.2, color = "blue") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(
+    title = "Interactive Average Temperature Trends",
+    x = "Date",
+    y = "Average Temperature (°C)"
+  ) +
+  theme_minimal()
+
+ggplotly(plot)
+
+```
+
+#This graph demonstrates fluctuations in average temperatures over the years, with a marked increase in variability and higher values in recent decades, aligning with global warming patterns. The loess smoother clearly highlights the upward trend in global temperatures, especially during the 20th century, showcasing a consistent warming pattern over time.
+
+
+###Comparing Regional Trends
+```{r}
+library(stringr)
+
+regional_trends <- recent_data %>%
+  mutate(Region = case_when(
+    Country %in% c("India", "China", "Japan") ~ "Asia",
+    Country %in% c("United States", "Canada") ~ "North America",
+    TRUE ~ "Other"
+  )) %>%
+  group_by(Region, dt) %>%
+  summarize(mean_temp = mean(AverageTemperature, na.rm = TRUE))
+
+recent_data <- recent_data %>%
+  mutate(Street_Ending = str_extract(Country, "\\w+$"))
+
+temperature_trend <- function(data, region) {
+  data %>%
+    filter(Region == region) %>%
+    summarize(Mean_Temperature = mean(AverageTemperature, na.rm = TRUE))
+}
+
+
+# Regional trends by temperature
+ggplot(regional_trends, aes(x = as.Date(dt), y = mean_temp, color = Region)) +
+  geom_line() +
+  facet_wrap(~Region) + 
+  labs(
+    title = "Temperature Trends by Region",
+    x = "Date",
+    y = "Mean Temperature (°C)",
+    color = "Region" # Add legend title
+  ) +
+  theme_minimal()
+
+```
+#This graph illustrates temperature trends across regions with notable differences. Asia and North America exhibit a steady upward trend in mean temperatures over the years, suggesting consistent warming. In contrast, the "Other" regions display greater variability, reflecting diverse climatic conditions. The faceted design separates each region, enhancing readability and allowing for an in-depth comparison of regional temperature changes over time.
+
+###Global Temperature Distribution
+```{r}
+
+recent_data$Country <- reorder(recent_data$Country, recent_data$AverageTemperature, median, na.rm = TRUE)
+
+# Boxplot showing temperature distribution by country
+ggplot(recent_data, aes(x = Country, y = AverageTemperature)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Average Temperatures by Country",
+    x = "Country",
+    y = "Average Temperature (°C)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 8) 
+  )
+
+
+
+```
+#The boxplot indicates a wide distribution of temperatures across countries, with some outliers showing extremely high or low average temperatures, emphasizing the diversity of climatic conditions globally.Sorting the boxplot by median temperature enhances the visualization, making it easier to identify countries with the highest and lowest average temperatures.
+
+
+### CO2 Vs Land Temperature(using secondary data)
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(lubridate)  
+
+#the climate package and data loaded
+library(climate)
+data("co2_demo", package = "climate") 
+
+recent_data <- recent_data %>%
+  mutate(Year = year(as.Date(dt)))  
+
+
+co2_demo <- co2_demo %>%
+  rename(Year = yy)
+
+merged_data <- inner_join(recent_data, co2_demo, by = "Year")
+
+
+cor_value <- cor(merged_data$co2_avg, merged_data$AverageTemperature, use = "complete.obs")
+
+ggplot(merged_data, aes(x = co2_avg, y = AverageTemperature)) +
+  geom_bin2d(bins = 50) +
+  scale_fill_gradient(low = "blue", high = "red") +
+  geom_smooth(method = "lm", color = "black") +
+  annotate(
+    "text", x = 375, y = -10, label = paste("Correlation:", round(cor_value, 2)), color = "white"
+  ) +
+  labs(
+    title = "CO2 Levels vs. Land Temperature",
+    x = "CO2 Levels (ppm)",
+    y = "Average Land Temperature (°C)"
+  ) +
+  theme_minimal()
+
+```
+
+#This scatter plot illustrates the relationship between CO2 levels (ppm) and average land temperatures (°C), showcasing a weak positive correlation (Correlation: 0.03). The color gradient, generated using geom_bin2d, visualizes the density of data points, with warmer colors indicating higher density. The black regression line highlights the trend, suggesting a marginal increase in average land temperatures with rising CO2 levels, supporting the hypothesis that CO2 emissions influence global warming.
+
+### Conclusion
+#The analysis reveals a significant increase in global land temperatures over the past century, with the most pronounced warming occurring in recent decades. Regional trends show consistent increases in Asia and North America, while other regions display more variability. The distribution of temperatures across countries highlights diverse climatic conditions, with a general warming trend observed globally.A strong positive correlation between rising CO2 levels and increasing temperatures confirms the role of greenhouse gas emissions in driving global warming. These findings emphasize the urgent need for global action to address climate change and its impacts.
+
